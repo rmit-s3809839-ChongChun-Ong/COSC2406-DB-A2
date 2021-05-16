@@ -1,267 +1,199 @@
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
-import java.io.*;
-import java.util.ArrayList;
-import java.util.Arrays;
-
-//dbload class
 public class dbload {
 
-   static final int SDTNameMaxLength = 25;   
-   static final int IDMaxLength = 8;
-   static final int DTMaxLength = 22;
-   static final int yearMaxLength = 4;
-   static final int monthMaxLength = 9;
-   static final int mDateMaxLength = 4;
-   static final int dayMaxLength = 9;
-   static final int timeMaxLength = 4;
-   static final int sIDMaxLength = 4;
-   static final int sNameMaxLength = 50;
-   static final int hourlyCountsMaxLength = 4;
+    /*
+     * Loads data from an input csv into fixed-length records. Record fields are:
+     * SDT_NAME field = 24 bytes, offset = 0
+     * id field = 4 bytes, offset = 24
+     * date field = 8 bytes, offset = 28
+     * year field = 4 bytes, offset = 36
+     * month field = 9 bytes, offset = 40
+     * mdate field = 4 bytes, offset = 49
+     * day field = 9 bytes, offset = 53
+     * time field = 4 bytes, offset = 62
+     * sensorid field = 4 bytes, offset = 66
+     * sensorname field = 38 bytes, offset = 70
+     * counts field = 4 bytes, offset = 108
+     * end of record = 111 (inclusive)
+     *
+     * Outputs a binary file called heap.pagesize
+     */
+    public static void main(String[] args) throws IOException {
 
-   //page class to hold pages
-    static class page {
-       ArrayList<ArrayList<rec>> lstPage = new ArrayList<ArrayList<rec>>();
-   }
+        // check for correct number of arguments
+        if (args.length != constants.DBLOAD_ARG_COUNT) {
+            System.out.println("Error: Incorrect number of arguments were input");
+            return;
+        }
 
-   //record class to hold records
-   static class rec {
-    int ID;
-    String Date_Time;
-    int Year;
-    String Month;
-    int mDate;
-    String Day;
-    int Time;
-    int SensorID;
-    String SensorName;
-    String SDT_Name;
-    int HourlyCounts;
- }
+        int pageSize = Integer.parseInt(args[constants.DBLOAD_PAGE_SIZE_ARG]);
+        String datafile = args[constants.DATAFILE_ARG];
+        String outputFileName = "heap." + pageSize;
+        int numRecordsLoaded = 0;
+        int numberOfPagesUsed = 0;
+        long startTime = 0;
+        long finishTime = 0;
+        boolean exceptionOccurred = false;
+        final int numBytesFixedLengthRecord = constants.TOTAL_SIZE;
+        int numRecordsPerPage = pageSize/numBytesFixedLengthRecord;
+        SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd/yyyy hh:mm:ss a");
 
-//InitaliseOutputStream. File created is heap.(pagesize).
-public static DataOutputStream GenerateOutputStream(int pageSize) throws FileNotFoundException {
-    DataOutputStream oStream = new DataOutputStream(new FileOutputStream("heap." + pageSize));
-    return oStream;
- }
+        BufferedReader reader = null;
+        FileOutputStream outputStream = null;
+        ByteArrayOutputStream byteOutputStream = null;
+        DataOutputStream dataOutput = null;
 
- //This method will read data from the .csv file using a buffered reader.
- //All strings will be converted to bytes and written to file through DataOutputStream
- //Record size = Total size of all the fields.
- //All records are stored in a page until no more record can fit into the page.
- public static void CreateHeapFile(int pagesize, String datafile){
-   File file = new File("heap" + "." + pagesize);
-   int pageNum = 1;
+        try {
 
-   String line = "";  
-   String splitBy = ",";  
-   try   
-   {  
-   //parsing a CSV file into BufferedReader class constructor  
-   BufferedReader br = new BufferedReader(new FileReader(datafile));  
-   DataOutputStream objStream = GenerateOutputStream(pagesize);
+            reader = new BufferedReader(new FileReader(datafile));
+            outputStream = new FileOutputStream(outputFileName, true);
+            byteOutputStream = new ByteArrayOutputStream();
+            dataOutput = new DataOutputStream(byteOutputStream);
 
-   String headerLine = br.readLine();
-   page objPage = new page();
-   objPage.lstPage.add(new ArrayList<rec>());
-   rec objRow = null;
-   int intTotalRecordSize= 0;
-   int intTotalRowCount = 0;
-   int intPageNo = 0;
+            startTime = System.nanoTime();
 
-   while ((line = br.readLine()) != null)   //returns a Boolean value  
-   {  
-   
-   objRow = new rec();
+            // read in the header line (not processed further, as datafile fieldnames are known)
+            String line = reader.readLine();
 
-   int SDTLength = 0;
-          int IDLength = 0;
-          int DTLength = 0;
-          int yearLength = 0;
-          int monLength = 0;
-          int mDtLength = 0;
-          int dayLength = 0;
-          int timeLength = 0;
-          int sIDLength = 0;
-          int sNameLength = 0;
-          int hcLength = 0;
-          int tmpRecordSize = 0;
-          int maxLength = 0;
-          String strDateTime="";
-          String strSensorID="";
-          String strSDTNameValue="";
+            // read in lines while not the end of file
+            while ((line = reader.readLine()) != null) {
 
-   String[] ArrPC = line.split(splitBy);    // use comma as separator  
-   
-      //Add new field SDT_Name.
-       strSDTNameValue = ArrPC[7] + "_" + ArrPC[1];
-       byte[] objtmpByte = strSDTNameValue.getBytes("UTF-8");
+                String[] valuesAsStrings = line.split(",");
 
-       byte[] tmpSDTByte = Arrays.copyOf(objtmpByte, SDTNameMaxLength);
-       objStream.write(tmpSDTByte);
+                // Convert data into relevant data types
+                int id = Integer.parseInt(valuesAsStrings[constants.ID_POS]);
+                String dateTimeString = valuesAsStrings[constants.DATETIME_POS];
+                int year = Integer.parseInt(valuesAsStrings[constants.YEAR_POS]);
+                String month = valuesAsStrings[constants.MONTH_POS];
+                int mdate = Integer.parseInt(valuesAsStrings[constants.MDATE_POS]);
+                String day = valuesAsStrings[constants.DAY_POS];
+                int time = Integer.parseInt(valuesAsStrings[constants.TIME_POS]);
+                String sensorIdString = valuesAsStrings[constants.SENSORID_POS];
+                String sensorName = valuesAsStrings[constants.SENSORNAME_POS];
+                int counts = Integer.parseInt(valuesAsStrings[constants.COUNTS_POS]);
+                String sdtName = sensorIdString + dateTimeString;
+                int sensorId = Integer.parseInt(sensorIdString);
 
-       objRow.SDT_Name = strSDTNameValue;
-       tmpRecordSize += tmpSDTByte.length;
-    
-     for (int x=0; x < ArrPC.length; x++){
-                       
-                if (x == 0) {
-                  int idValue = Integer.parseInt(ArrPC[x]);
-                  byte[] objByte =  intToByteArray(idValue);
+                // parse datetime field into a date object, then get long datatype representation
+                Date date = dateFormat.parse(dateTimeString);
+                long dateTimeLongRep = date.getTime();
 
-                  byte[] tmpByte = Arrays.copyOf(objByte, IDMaxLength);
-                    objStream.write(tmpByte);
-                     IDLength = tmpByte.length;
-                    tmpRecordSize += IDLength;
-                    objRow.ID = Integer.parseInt(ArrPC[x]);
+                // Write bytes to data output stream
+                dataOutput.writeBytes(getStringOfLength(sdtName, constants.STD_NAME_SIZE));
+                dataOutput.writeInt(id);
+                dataOutput.writeLong(dateTimeLongRep);
+                dataOutput.writeInt(year);
+                dataOutput.writeBytes(getStringOfLength(month, constants.MONTH_SIZE));
+                dataOutput.writeInt(mdate);
+                dataOutput.writeBytes(getStringOfLength(day, constants.DAY_SIZE));
+                dataOutput.writeInt(time);
+                dataOutput.writeInt(sensorId);
+                dataOutput.writeBytes(getStringOfLength(sensorName, constants.SENSORNAME_SIZE));
+                dataOutput.writeInt(counts);
+
+                numRecordsLoaded++;
+                // check if a new page is needed
+                if (numRecordsLoaded % numRecordsPerPage == 0) {
+                    dataOutput.flush();
+                    // Get the byte array of loaded records, copy to an empty page and writeout
+                    byte[] page = new byte[pageSize];
+                    byte[] records = byteOutputStream.toByteArray();
+                    int numberBytesToCopy = byteOutputStream.size();
+                    System.arraycopy(records, 0, page, 0, numberBytesToCopy);
+                    writeOut(outputStream, page);
+                    numberOfPagesUsed++;
+                    byteOutputStream.reset();
                 }
-                else if (x == 1) {
-                  byte[] objByte = ArrPC[x].getBytes("UTF-8");
+            }
 
-                  byte[] tmpByte = Arrays.copyOf(objByte, DTMaxLength);
-                     objStream.write(tmpByte);
-                     DTLength = tmpByte.length;
-                   tmpRecordSize += DTLength;
-                  objRow.Date_Time = ArrPC[x];
-               }
-                else if (x == 2) {
-                  int yearValue = Integer.parseInt(ArrPC[x]);
-                  byte[] objByte =  intToByteArray(yearValue);
-                  byte[] tmpByte = Arrays.copyOf(objByte, DTMaxLength);
-                  objStream.write(tmpByte);
-                  yearLength = tmpByte.length;
-                  tmpRecordSize += yearLength;
-                 objRow.Year = Integer.parseInt(ArrPC[x]);
-               }
-               else if (x == 3) {
-                  byte[] objByte = ArrPC[x].getBytes("UTF-8");
-                  byte[] tmpByte = Arrays.copyOf(objByte, monthMaxLength);
-                  objStream.write(tmpByte);
-                  monLength = tmpByte.length;             
-                 tmpRecordSize += monLength;
-                 objRow.Month = ArrPC[x];
-      
-               }
-               else if (x == 4) {
-                  int mDateValue = Integer.parseInt(ArrPC[x]);
-                  byte[] objByte =  intToByteArray(mDateValue);
-                  byte[] tmpByte = Arrays.copyOf(objByte, mDateMaxLength);
-                  objStream.write(tmpByte);
-                  mDtLength = tmpByte.length;                     
-                 tmpRecordSize += mDtLength;
-                 objRow.mDate = Integer.parseInt(ArrPC[x]);
-              }
-               else if (x == 5) {
-                  byte[] objByte = ArrPC[x].getBytes("UTF-8");
-                 byte[] tmpByte = Arrays.copyOf(objByte, dayMaxLength);
-                  objStream.write(tmpByte);
-                  dayLength = tmpByte.length;        
-                  tmpRecordSize += dayLength;
-                 objRow.Day = ArrPC[x];
-               }
-               else if (x == 6) {
-                  int timeValue = Integer.parseInt(ArrPC[x]);
-                  byte[] objByte =  intToByteArray(timeValue);
-                  byte[] tmpByte = Arrays.copyOf(objByte, timeMaxLength);
-                  objStream.write(tmpByte);
-                  timeLength = tmpByte.length;
-                  tmpRecordSize += timeLength;
-                  objRow.Time = Integer.parseInt(ArrPC[x]);
-               }
-               else if (x == 7) {
-                  int sensorIDValue = Integer.parseInt(ArrPC[x]);
-                  byte[] objByte =  intToByteArray(sensorIDValue);
-                  byte[] tmpByte = Arrays.copyOf(objByte, sIDMaxLength);
-                  objStream.write(tmpByte);
-                  sIDLength = tmpByte.length;  
-                 tmpRecordSize += sIDLength;
-                 objRow.SensorID =  Integer.parseInt(ArrPC[x]);
-               }
-               else if (x == 8) {
-                  byte[] objByte = ArrPC[x].getBytes("UTF-8");
-                  byte[] tmpByte = Arrays.copyOf(objByte, sNameMaxLength);
-                  objStream.write(tmpByte);
-                  sNameLength = tmpByte.length;   
-                 tmpRecordSize += sNameLength;
-                objRow.SensorName = ArrPC[x];
-              
-               }
-               else if (x == 9) {
-                  int hourlyCountsValue = Integer.parseInt(ArrPC[x]);
-                  byte[] objByte =  intToByteArray(hourlyCountsValue);
-                  byte[] tmpByte = Arrays.copyOf(objByte, hourlyCountsMaxLength);
-                  objStream.write(tmpByte);
-                  hcLength = tmpByte.length;            
-                  tmpRecordSize += hcLength;
-                 objRow.HourlyCounts = Integer.parseInt(ArrPC[x]);
-             }
-                   
-             }
-              
-                 if((tmpRecordSize + intTotalRecordSize) < pagesize){
-                    intTotalRowCount++;
-                    intTotalRecordSize += tmpRecordSize;
-                    objPage.lstPage.get(intPageNo).add(objRow);
-                                    
-                  }
-                else{
-                   intPageNo++;
-                    objPage.lstPage.add(new ArrayList<rec>());
-                    objPage.lstPage.get(intPageNo).add(objRow);                   
-                    intTotalRecordSize = tmpRecordSize;
-                  }
-  
-   }  
+            // At end of csv, check if there are records in the current page to be written out
+            if (numRecordsLoaded % numRecordsPerPage != 0) {
+                dataOutput.flush();
+                byte[] page = new byte[pageSize];
+                byte[] records = byteOutputStream.toByteArray();
+                int numberBytesToCopy = byteOutputStream.size();
+                System.arraycopy(records, 0, page, 0, numberBytesToCopy);
+                writeOut(outputStream, page);
+                numberOfPagesUsed++;
+                byteOutputStream.reset();
+            }
 
-       //Print out the total no of pages and total no of records
-    System.out.println("Total number of pages: " + objPage.lstPage.size());
-    int intTotalRows=0;
-    for(int i=0; i<objPage.lstPage.size(); i++) {
-       for(int j=0; j<objPage.lstPage.get(i).size(); j++) {
-         intTotalRows++;
-       }
-    }
-    System.out.println("Total number of records: " + intTotalRows);
-
-   }   
-   catch (IOException e)   
-   {  
-   e.printStackTrace();  
-   }  
- }
- 
-private static byte[] intToByteArray(final int i ) throws IOException {      
-   byte[] bytes = java.nio.ByteBuffer.allocate(4).putInt(i).array();
-
-   return bytes;
-}
-
- //Main method
- //Calculates the time taken to create heap file in ms.
- public static void main(String[] args) {
-    long intStartTime = System.nanoTime();
-    try {
-   
-        int pagesize = 0;
-        String datafile = null;
-        try{
-            pagesize = Integer.parseInt(args[1]);
-            datafile = args[2];    
+            finishTime = System.nanoTime();
         }
-        catch(Exception e){
-            System.out.println("Invalid arguments. Please try again");
-            System.exit(0);
+        catch (FileNotFoundException e) {
+            System.err.println("Error: File not present " + e.getMessage());
+            exceptionOccurred = true;
         }
-       
-        CreateHeapFile(pagesize,datafile);
-        long intEndTime = System.nanoTime();
-        long intTotalTime = (intEndTime - intStartTime) / 1000000;
-        System.out.println("Heap file creation completed in: " + intTotalTime + "ms");
+        catch (IOException e) {
+            System.err.println("Error: IOExeption " + e.getMessage());
+            exceptionOccurred = true;
+        }
+        catch (ParseException e) {
+            System.err.println("Parse error when parsing date: " + e.getMessage());
+        }
+        finally {
+            // close input/output streams
+            if (reader != null) {
+                reader.close();
+            }
+            if (dataOutput != null) {
+                dataOutput.close();
+            }
+            if (byteOutputStream != null) {
+                byteOutputStream.close();
+            }
+            if (outputStream != null) {
+                outputStream.close();
+            }
+        }
 
-    } catch (Exception e) {
-       System.err.println(e.getMessage());
+        // print out stats if all operations succeeded
+        if (exceptionOccurred == false) {
+
+            System.out.println("The number of records loaded: " + numRecordsLoaded);
+            System.out.println("The number of pages used: " + numberOfPagesUsed);
+            long timeInMilliseconds = (finishTime - startTime)/constants.MILLISECONDS_PER_SECOND;
+            System.out.println("Time taken: " + timeInMilliseconds + " ms");
+        }
     }
-   
- }
 
- 
+    // Writes out a byte array to file using a FileOutputStream
+    public static void writeOut(FileOutputStream stream, byte[] byteArray)
+            throws FileNotFoundException, IOException {
+
+        stream.write(byteArray);
+    }
+
+    // Returns a whitespace padded string of the same length as parameter int length
+    public static String getStringOfLength(String original, int length) {
+
+        int lengthDiff = length - original.length();
+
+        // Check difference in string lengths
+        if (lengthDiff == 0) {
+            return original;
+        }
+        else if (lengthDiff > 0) {
+            // if original string is too short, pad end with whitespace
+            StringBuilder string = new StringBuilder(original);
+            for (int i = 0; i < lengthDiff; i++) {
+                string.append(" ");
+            }
+            return string.toString();
+        }
+        else {
+            // if original string is too long, shorten to required length
+            return original.substring(0, length);
+        }
+    }
 }

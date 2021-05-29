@@ -85,7 +85,7 @@ public static void populateTree(int pageSize)  {
             inStream = new FileInputStream(datafile);
             int numBytesRead = 0;
             byte[] sdtnameBytes = new byte[numBytesInSdtnameField];
-         
+			int position=0;
             // until the end of the binary file is reached
             while ((numBytesRead = inStream.read(page)) != -1) {
               
@@ -102,25 +102,27 @@ public static void populateTree(int pageSize)  {
 
                     // Check for match to "text"
                     String sdtNameString = new String(sdtnameBytes);
-                    
-					Nodesize = (1024 - SDTName_SIZE) / SDTName_SIZE + 8 ;
-			
+                
+					//System.out.println("name " + sdtNameString + "at line:" + numBytesInOneRecord);
+
 					//insert(root,sdtNameString, (i*numBytesInOneRecord), numBytesInOneRecord);
-					 insert(root,sdtNameString, i, numBytesInOneRecord);
-					 // insert(root,strSDTname, offset, i);
-					 // offset += (i + 2);
-					   
-				   writeIndexfile("24", path.toString(), IndexFileName);
-					
+					// insert(root,sdtNameString, position, numBytesInOneRecord);
+					 insert(root,sdtNameString, position, numBytesInOneRecord);
 				
+					position += numBytesRead;		
+			//	position += 1;									
                 }
+				
             }
+			
+			//writeIndexfile("6", path.toString(), IndexFileName);
 
             }
         catch (Exception e) {
             System.err.println("Error occcured " + e.getMessage());
         }
-	  
+
+		
  }
 
 public static void populateTree_old(int pageSize) {
@@ -169,7 +171,7 @@ public static void populateTree_old(int pageSize) {
 		 // insert(root,strSDTname, offset, i);
 		 // offset += (i + 2);
 		   
-	   writeIndexfile("25", path.toString(), IndexFileName);
+	   writeIndexfile("6", path.toString(), IndexFileName);
 
     }
 	//bw.close();
@@ -190,7 +192,9 @@ public static void populateTree_old(int pageSize) {
 	 * is called and the tree is balanced.
 	 */
 private static void insert(Tree node, String key,long offset, int reclength) throws IOException {
-		
+	
+	
+
 		if ((node == null || node.key.isEmpty()) && node == root) {
 			node.key.add(key);
 			node.offsetvalue.add((Long) offset);
@@ -437,19 +441,33 @@ private static void insert(Tree node, String key,long offset, int reclength) thr
 	 * It calls the insert function for the index file to be created.Once the index 
 	 * file is created it calls the write file function to insert into the file path.
 	 */
-	private static void WriteIndex(String key, String heapfilepath, String indexfilepath) throws IOException {
+	// private static void WriteIndex_old(String key, String heapfilepath, String indexfilepath) throws IOException {
 		
-		int keyLength = Integer.parseInt(key);
-		Nodesize = (1024 - keyLength) / keyLength + 8 ;
-		int offset = 0;	
-		String s;
-		BufferedReader br = new BufferedReader(new FileReader(heapfilepath));
-		while ((s = br.readLine()) != null) {
-			insert(root,(String) s.subSequence(0, keyLength), offset, s.length());
-			offset += s.length() + 2;
-		}
-		br.close();
-		writeIndexfile(key, heapfilepath, indexfilepath);
+	// 	int keyLength = key;
+	// 	Nodesize = (1024 - keyLength) / keyLength + 8 ;
+	// 	int offset = 0;	
+	// 	String s;
+	// 	BufferedReader br = new BufferedReader(new FileReader(heapfilepath));
+	// 	while ((s = br.readLine()) != null) {
+	// 		insert(root,(String) s.subSequence(0, keyLength), offset, s.length());
+	// 		offset += s.length() + 2;
+	// 	}
+	// 	br.close();
+	// 	writeIndexfile(key, heapfilepath, indexfilepath);
+	// }
+
+	private static void CreateTree(int pageSize) throws IOException {
+		try{
+		String IndexFileName = "treeIndex." + pageSize;
+		Path path = Paths.get("heap." + pageSize);
+
+		populateTree(pageSize);
+		writeIndexfile("6", path.toString(), IndexFileName);
+	}
+	catch (Exception e) {
+		System.err.println("Error occcured " + e.getMessage());
+	}
+
 	}
 
     	/*
@@ -460,9 +478,9 @@ private static void insert(Tree node, String key,long offset, int reclength) thr
 	 */
 	private static void writeIndexfile(String key, String heapfilepath, String indexfilename) throws IOException {
 	
-		//for (int a = 0; a < root.key.size(); a++) {
-		//	System.out.println("node:" + root.offsetvalue);
-		//}
+	//	for (int a = 0; a < root.key.size(); a++) {
+	//		System.out.println("node:" + root.key.get(a));
+	//	}
 	
 		FileOutputStream fout = new FileOutputStream(indexfilename);
 		byte[] heapFileName = heapfilepath.getBytes();
@@ -471,7 +489,7 @@ private static void insert(Tree node, String key,long offset, int reclength) thr
 		FileChannel fc = fout.getChannel();
 		fc.write(ByteBuffer.wrap(heapFileName));
 		fc.write(ByteBuffer.wrap(keyLength), 257l);
-		//fc.write(ByteBuffer.wrap(rootOffset), 285l);
+	//	fc.write(ByteBuffer.wrap(rootOffset), 285l);
 		fc.write(ByteBuffer.wrap(rootOffset), 260l);
 		fc.position(1025l);
 		ObjectOutputStream oos = new ObjectOutputStream(fout);
@@ -490,15 +508,17 @@ private static void insert(Tree node, String key,long offset, int reclength) thr
        long startTime = System.currentTimeMillis();
        
 	   objTree.initialiseTree();
-       objTree.populateTree(pageSize);
-       
+      // objTree.populateTree(pageSize);
+	  objTree.CreateTree(pageSize);
+     
        long stopTime = System.currentTimeMillis();
        
        System.out.println(stopTime - startTime + " ms");
        System.out.println((stopTime - startTime) * 0.001 + " sec");
        System.out.println("Index file created successfully");
-       
-    } catch(NumberFormatException | ArrayIndexOutOfBoundsException e) {
+	   
+	} catch (Exception e) {   
+   // } catch(NumberFormatException | ArrayIndexOutOfBoundsException e) {
        System.out.println("Invalid pagesize");
     }
 

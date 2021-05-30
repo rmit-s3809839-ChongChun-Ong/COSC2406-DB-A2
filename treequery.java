@@ -322,12 +322,9 @@ public class treequery {
 		else {
 			RandomAccessFile file = new RandomAccessFile(indexpath, "r");
 			byte[] key = new byte[3];
-			//byte[] key = new byte[25];
 			file.seek(257l);
 			file.read(key);
 			String keyLength = new String(key);
-
-		//	System.out.println(keyLength);
 
 			file.close();
 			return keyLength.trim();
